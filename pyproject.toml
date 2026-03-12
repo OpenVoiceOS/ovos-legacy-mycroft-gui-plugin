@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ovos-legacy-mycroft-gui-plugin"
+dynamic = ["version"]
+description = "Backward-compatible Qt/QML GUI adapter plugin for OpenVoiceOS — speaks the mycroft-gui WebSocket protocol"
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{name = "OpenVoiceOS", email = "jarbasai@mailfence.com"}]
+requires-python = ">=3.9"
+dependencies = [
+    "ovos-plugin-manager>=0.5.5,<3.0.0",
+    "ovos_bus_client>=1.0.0,<2.0.0",
+    "ovos-utils>=0.0.37,<1.0.0",
+    "ovos-config>=0.0.12,<3.0.0",
+    "tornado~=6.0,>=6.0.3",
+]
+
+[project.urls]
+Homepage = "https://github.com/OpenVoiceOS/ovos-legacy-mycroft-gui-plugin"
+Repository = "https://github.com/OpenVoiceOS/ovos-legacy-mycroft-gui-plugin"
+
+[project.entry-points."opm.gui_adapter"]
+ovos-legacy-mycroft-gui = "ovos_legacy_mycroft_gui:LegacyMycoftGuiPlugin"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+ovos_legacy_mycroft_gui = ["ui/*.qml"]
+
+[tool.setuptools.packages.find]
+include = ["ovos_legacy_mycroft_gui*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "ovos_legacy_mycroft_gui.version.__version__"}
