@@ -36,7 +36,7 @@ from ovos_legacy_mycroft_gui.websocket import (
     create_gui_service,
     get_gui_websocket_config,
     send_to_all_clients,
-    send_to_clients_for_site,
+    send_to_clients_for_session,
 )
 
 # Session-data keys never forwarded to Qt clients
@@ -156,7 +156,7 @@ class LegacyMycoftGuiPlugin(AbstractGUIPlugin):
             self._namespaces[skill_id] = _NamespaceState(skill_id)
         return self._namespaces[skill_id]
 
-    def _push_namespace(self, skill_id: str, site_id: str = "default"):
+    def _push_namespace(self, skill_id: str, session_id: str = "default"):
         """Move *skill_id* to the top of the active stack on Qt clients."""
         with self._lock:
             if skill_id in self._active_stack:
@@ -164,7 +164,7 @@ class LegacyMycoftGuiPlugin(AbstractGUIPlugin):
                 if pos == 0:
                     return
                 self._active_stack.insert(0, self._active_stack.pop(pos))
-                send_to_clients_for_site(site_id, {
+                send_to_clients_for_session(session_id, {
                     "type": "mycroft.session.list.move",
                     "namespace": "mycroft.system.active_skills",
                     "from": pos,
@@ -173,7 +173,7 @@ class LegacyMycoftGuiPlugin(AbstractGUIPlugin):
                 })
             else:
                 self._active_stack.insert(0, skill_id)
-                send_to_clients_for_site(site_id, {
+                send_to_clients_for_session(session_id, {
                     "type": "mycroft.session.list.insert",
                     "namespace": "mycroft.system.active_skills",
                     "position": 0,
@@ -188,7 +188,7 @@ class LegacyMycoftGuiPlugin(AbstractGUIPlugin):
             pos = self._active_stack.index(skill_id)
             self._active_stack.remove(skill_id)
 
-        # Namespace removal broadcasts to all sites (skill is gone globally)
+        # Namespace removal broadcasts to all sessions (skill is gone globally)
         send_to_all_clients({
             "type": "mycroft.session.list.remove",
             "namespace": "mycroft.system.active_skills",
@@ -196,29 +196,29 @@ class LegacyMycoftGuiPlugin(AbstractGUIPlugin):
             "items_number": 1,
         })
 
-    def _sync_session_data(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
+    def _sync_session_data(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
         """Forward session data to the appropriate Qt clients as ``mycroft.session.set`` messages."""
         for key, value in data.items():
             if key in _RESERVED:
                 continue
-            send_to_clients_for_site(site_id, {
+            send_to_clients_for_session(session_id, {
                 "type": "mycroft.session.set",
                 "namespace": skill_id,
                 "data": {key: value},
             })
 
-    def _show_qml(self, skill_id: str, qml_name: str, site_id: str = "default"):
+    def _show_qml(self, skill_id: str, qml_name: str, session_id: str = "default"):
         """Insert *qml_name* as the single page in *skill_id*'s namespace and focus it."""
         page = GuiPage(name=qml_name, namespace=skill_id, persistent=True)
 
         # Always replace — only one page per namespace in the new model
-        send_to_clients_for_site(site_id, {
+        send_to_clients_for_session(session_id, {
             "type": "mycroft.gui.list.insert",
             "namespace": skill_id,
             "position": 0,
             "data": [{"url": page.get_uri(), "page": qml_name}],
         })
-        send_to_clients_for_site(site_id, {
+        send_to_clients_for_session(session_id, {
             "type": "mycroft.events.triggered",
             "namespace": skill_id,
             "event_name": "page_gained_focus",
@@ -228,7 +228,7 @@ class LegacyMycoftGuiPlugin(AbstractGUIPlugin):
         ns = self._ensure_namespace(skill_id)
         ns.page = qml_name
 
-    def _show_template(self, template_id: str, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
+    def _show_template(self, template_id: str, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
         """Translate one SYSTEM_* template event into mycroft-gui protocol messages.
 
         1. Sync session data so QML properties are up to date.
@@ -243,9 +243,9 @@ class LegacyMycoftGuiPlugin(AbstractGUIPlugin):
         ns = self._ensure_namespace(skill_id)
         ns.data.update({k: v for k, v in data.items() if k not in _RESERVED})
 
-        self._sync_session_data(skill_id, ns.data, site_id)
-        self._push_namespace(skill_id, site_id)
-        self._show_qml(skill_id, qml_name, site_id)
+        self._sync_session_data(skill_id, ns.data, session_id)
+        self._push_namespace(skill_id, session_id)
+        self._show_qml(skill_id, qml_name, session_id)
 
     # ------------------------------------------------------------------
     # Synchronize state to a newly connected Qt client
@@ -291,28 +291,28 @@ class LegacyMycoftGuiPlugin(AbstractGUIPlugin):
     # AbstractGUIPlugin — lifecycle hooks
     # ------------------------------------------------------------------
 
-    def on_namespace_activated(self, skill_id: str, site_id: str = "default"):
-        self._push_namespace(skill_id, site_id)
+    def on_namespace_activated(self, skill_id: str, session_id: str = "default"):
+        self._push_namespace(skill_id, session_id)
 
-    def on_namespace_deactivated(self, skill_id: str, site_id: str = "default"):
+    def on_namespace_deactivated(self, skill_id: str, session_id: str = "default"):
         ns = self._namespaces.pop(skill_id, None)
         if ns:
             ns.data.clear()
         self._pop_namespace(skill_id)
 
-    def on_session_update(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
+    def on_session_update(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
         ns = self._ensure_namespace(skill_id)
         with self._lock:
             ns.data.update({k: v for k, v in data.items() if k not in _RESERVED})
         # Only push live if this namespace is currently visible
         if self._active_stack and self._active_stack[0] == skill_id:
-            self._sync_session_data(skill_id, data, site_id)
+            self._sync_session_data(skill_id, data, session_id)
 
-    def on_status_event(self, event_name: str, data: Dict[str, Any], site_id: str = "default"):
+    def on_status_event(self, event_name: str, data: Dict[str, Any], session_id: str = "default"):
         """Forward OVOS status events to Qt clients as ``system``-namespace triggers.
 
         Status events (wakeword, speaking, etc.) are system-wide — sent to
-        every connected Qt client regardless of site.
+        every connected Qt client regardless of session.
         """
         send_to_all_clients({
             "type": "mycroft.events.triggered",
@@ -325,87 +325,87 @@ class LegacyMycoftGuiPlugin(AbstractGUIPlugin):
     # AbstractGUIPlugin — template handlers (all delegate to _show_template)
     # ------------------------------------------------------------------
 
-    def handle_show_idle(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_idle", skill_id, data, site_id)
+    def handle_show_idle(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_idle", skill_id, data, session_id)
 
-    def handle_show_loading(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_loading", skill_id, data, site_id)
+    def handle_show_loading(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_loading", skill_id, data, session_id)
 
-    def handle_show_status(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_status", skill_id, data, site_id)
+    def handle_show_status(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_status", skill_id, data, session_id)
 
-    def handle_show_error(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_error", skill_id, data, site_id)
+    def handle_show_error(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_error", skill_id, data, session_id)
 
-    def handle_show_text(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_text", skill_id, data, site_id)
+    def handle_show_text(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_text", skill_id, data, session_id)
 
-    def handle_show_image(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_image", skill_id, data, site_id)
+    def handle_show_image(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_image", skill_id, data, session_id)
 
-    def handle_show_animated_image(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_animated_image", skill_id, data, site_id)
+    def handle_show_animated_image(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_animated_image", skill_id, data, session_id)
 
-    def handle_show_list(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_list", skill_id, data, site_id)
+    def handle_show_list(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_list", skill_id, data, session_id)
 
-    def handle_show_grid(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_grid", skill_id, data, site_id)
+    def handle_show_grid(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_grid", skill_id, data, session_id)
 
-    def handle_show_table(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_table", skill_id, data, site_id)
+    def handle_show_table(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_table", skill_id, data, session_id)
 
-    def handle_show_html(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_html", skill_id, data, site_id)
+    def handle_show_html(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_html", skill_id, data, session_id)
 
-    def handle_show_url(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_url", skill_id, data, site_id)
+    def handle_show_url(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_url", skill_id, data, session_id)
 
-    def handle_show_audio_player(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_audio_player", skill_id, data, site_id)
+    def handle_show_audio_player(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_audio_player", skill_id, data, session_id)
 
-    def handle_show_video_player(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_video_player", skill_id, data, site_id)
+    def handle_show_video_player(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_video_player", skill_id, data, session_id)
 
     def handle_show_media_player(
         self,
         skill_id: str,
         data: Dict[str, Any],
-        site_id: str = "default",
+        session_id: str = "default",
     ) -> None:
         """Render the OCP unified media player (now-playing, playlist, search)."""
-        self._show_template("SYSTEM_media_player", skill_id, data, site_id)
+        self._show_template("SYSTEM_media_player", skill_id, data, session_id)
 
-    def handle_show_clock(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_clock", skill_id, data, site_id)
+    def handle_show_clock(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_clock", skill_id, data, session_id)
 
-    def handle_show_timer(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_timer", skill_id, data, site_id)
+    def handle_show_timer(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_timer", skill_id, data, session_id)
 
-    def handle_show_weather(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_weather", skill_id, data, site_id)
+    def handle_show_weather(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_weather", skill_id, data, session_id)
 
-    def handle_show_map(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_map", skill_id, data, site_id)
+    def handle_show_map(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_map", skill_id, data, session_id)
 
-    def handle_show_confirm(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_confirm", skill_id, data, site_id)
+    def handle_show_confirm(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_confirm", skill_id, data, session_id)
 
-    def handle_show_select(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_select", skill_id, data, site_id)
+    def handle_show_select(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_select", skill_id, data, session_id)
 
-    def handle_show_face(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_face", skill_id, data, site_id)
+    def handle_show_face(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_face", skill_id, data, session_id)
 
     # ------------------------------------------------------------------
     # OCP spec template handlers
     # ------------------------------------------------------------------
 
-    def handle_show_ocp_now_playing(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_ocp_now_playing", skill_id, data, site_id)
+    def handle_show_ocp_now_playing(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_ocp_now_playing", skill_id, data, session_id)
 
-    def handle_show_ocp_search(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_ocp_search", skill_id, data, site_id)
+    def handle_show_ocp_search(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_ocp_search", skill_id, data, session_id)
 
-    def handle_show_ocp_playlist(self, skill_id: str, data: Dict[str, Any], site_id: str = "default"):
-        self._show_template("SYSTEM_ocp_playlist", skill_id, data, site_id)
+    def handle_show_ocp_playlist(self, skill_id: str, data: Dict[str, Any], session_id: str = "default"):
+        self._show_template("SYSTEM_ocp_playlist", skill_id, data, session_id)
