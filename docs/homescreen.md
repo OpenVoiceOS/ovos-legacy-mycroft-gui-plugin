@@ -1,17 +1,17 @@
 # HomescreenManager
 
-`HomescreenManager` (`ovos_legacy_mycroft_gui/homescreen.py`) handles all
-homescreen data coordination that was previously done by `ovos-skill-homescreen`.
-It is instantiated by `LegacyMycoftGuiPlugin` when the bus connection is available.
+`HomescreenManager` (`ovos_legacy_mycroft_gui/homescreen.py`) handles the homescreen
+data that `ovos-skill-homescreen` used to handle. `LegacyMycoftGuiPlugin` creates
+one `HomescreenManager` instance when the bus connection is available.
 
 ---
 
 ## Responsibilities
 
 - Emit `homescreen.data.*` and `homescreen.widget.*` bus events at the correct
-  intervals so the Qt shell (`ovos-shell`) can display a live idle screen without
+  intervals, so the Qt shell (`ovos-shell`) can show a live idle screen without
   depending on any skill.
-- Register/deregister apps and example utterances as skills load and unload.
+- Register and remove apps and example utterances as skills load and unload.
 - Track OCP media state for the media widget.
 
 ---
@@ -33,20 +33,21 @@ Emitted every **10 seconds** using `ovos_date_parser.get_date_strings()`.
 }
 ```
 
-Language and format (`date_format`, `time_format`) are read from `mycroft.conf`.
+`mycroft.conf` sets the language and the format (`date_format`, `time_format`).
 
 ---
 
 ### `homescreen.data.weather`
 
-Requested every **900 seconds** via `skill-ovos-weather.openvoiceos.weather.request`.
-Response handled via `skill-ovos-weather.openvoiceos.weather.response`.
+Requested every **900 seconds** through `skill-ovos-weather.openvoiceos.weather.request`.
+The response arrives on `skill-ovos-weather.openvoiceos.weather.response`.
 
 ```json
 { "weather_api_enabled": true, "weather_code": 1, "weather_temp": "22" }
 ```
 
-If no weather skill is installed or the response has no `report` field:
+If no weather skill is installed, or the response has no `report` field, the manager
+emits this instead:
 
 ```json
 { "weather_api_enabled": false, "weather_code": 0, "weather_temp": "" }
@@ -56,7 +57,7 @@ If no weather skill is installed or the response has no `report` field:
 
 ### `homescreen.data.wallpaper`
 
-Emitted on `homescreen.wallpaper.set` (PHAL wallpaper manager API).
+Emitted on `homescreen.wallpaper.set` (the PHAL wallpaper manager API).
 
 ```json
 { "wallpaper_path": "/usr/share/wallpapers/", "selected_wallpaper": "default.jpg" }
@@ -66,8 +67,8 @@ Emitted on `homescreen.wallpaper.set` (PHAL wallpaper manager API).
 
 ### `homescreen.data.notifications`
 
-Emitted on `ovos.notification.update_counter` (triggers a storage model request)
-and on `ovos.notification.update_storage_model`.
+Emitted on `ovos.notification.update_counter` (this event also triggers a storage
+model request) and on `ovos.notification.update_storage_model`.
 
 ```json
 { "notification_counter": 3, "notification_model": { "storedmodel": [...] } }
@@ -88,7 +89,7 @@ Emitted when a skill registers (`homescreen.register.app`) or unregisters
 }
 ```
 
-Skills register apps by emitting:
+Skills register apps by emitting this event:
 ```json
 {
   "type": "homescreen.register.app",
@@ -111,10 +112,10 @@ Emitted on `homescreen.register.examples`, on `detach_skill`, and every
 }
 ```
 
-`skill_info_enabled` and `skill_info_prefix` come from `mycroft.conf` under
-`homescreen.examples_enabled` / `homescreen.examples_prefix`.
+`skill_info_enabled` and `skill_info_prefix` come from `mycroft.conf`, under
+`homescreen.examples_enabled` and `homescreen.examples_prefix`.
 
-Skills register examples by emitting:
+Skills register examples by emitting this event:
 ```json
 {
   "type": "homescreen.register.examples",
@@ -139,7 +140,7 @@ Possible values: `"online"`, `"network"` (LAN only), `"offline"`.
 
 ### `homescreen.widget.timer`
 
-Emitted on `ovos.widgets.timer.update`, `.display`, `.remove`.
+Emitted on `ovos.widgets.timer.update`, `.display`, and `.remove`.
 
 ```json
 { "count": 2, "timers": [...] }
@@ -149,7 +150,7 @@ Emitted on `ovos.widgets.timer.update`, `.display`, `.remove`.
 
 ### `homescreen.widget.alarm`
 
-Emitted on `ovos.widgets.alarm.update`, `.display`, `.remove`.
+Emitted on `ovos.widgets.alarm.update`, `.display`, and `.remove`.
 
 ```json
 { "count": 1, "alarms": [...] }
@@ -160,7 +161,7 @@ Emitted on `ovos.widgets.alarm.update`, `.display`, `.remove`.
 ### `homescreen.widget.media`
 
 Emitted on OCP player state changes (`gui.player.media.service.sync.status`)
-and track info responses (`ovos.common_play.track_info.response`).
+and on track info responses (`ovos.common_play.track_info.response`).
 
 ```json
 {
@@ -178,18 +179,21 @@ and track info responses (`ovos.common_play.track_info.response`).
 
 | Event | Action |
 |---|---|
-| `homescreen.register.examples` | Store examples per skill/lang; re-emit `.examples` |
-| `homescreen.register.app` | Store app entry; re-emit `.apps` |
-| `detach_skill` | Remove skill from examples + apps; re-emit affected events |
+| `homescreen.register.examples` | Store examples per skill and language, then re-emit `.examples` |
+| `homescreen.register.app` | Store app entry, then re-emit `.apps` |
+| `detach_skill` | Remove skill from examples and apps, then re-emit affected events |
 | `homescreen.wallpaper.set` | Parse and re-emit `.wallpaper` |
-| `ovos.notification.update_counter` | Store count; request storage model; re-emit `.notifications` |
-| `ovos.notification.update_storage_model` | Store model; re-emit `.notifications` |
-| `skill-ovos-weather.openvoiceos.weather.response` | Parse report; re-emit `.weather` |
-| `mycroft.network.connected` | Set connectivity = `"network"`; re-emit `.connectivity` |
-| `mycroft.internet.connected` | Set connectivity = `"online"`; re-emit `.connectivity` |
-| `enclosure.notify.no_internet` | Set connectivity = `"offline"`; re-emit `.connectivity` |
+| `ovos.notification.update_counter` | Store count, request storage model, then re-emit `.notifications` |
+| `ovos.notification.update_storage_model` | Store model, then re-emit `.notifications` |
+| `skill-ovos-weather.openvoiceos.weather.response` | Parse report, then re-emit `.weather` |
+| `mycroft.network.connected` | Set connectivity to `"network"`, then re-emit `.connectivity` |
+| `mycroft.internet.connected` | Set connectivity to `"online"`, then re-emit `.connectivity` |
+| `enclosure.notify.no_internet` | Set connectivity to `"offline"`, then re-emit `.connectivity` |
 | `ovos.widgets.timer.*` | Re-emit `homescreen.widget.timer` |
 | `ovos.widgets.alarm.*` | Re-emit `homescreen.widget.alarm` |
 | `gui.player.media.service.sync.status` | Re-emit `homescreen.widget.media` with state |
 | `ovos.common_play.track_info.response` | Re-emit `homescreen.widget.media` with track data |
 | `mycroft.ready` | Re-push all cached state (apps, connectivity, wallpaper, notifications) |
+
+---
+[Home](../README.md)
