@@ -90,24 +90,25 @@ def send_to_all_clients(message: dict):
             LOG.exception(f"Error sending to Qt client: {e}")
 
 
-def send_to_clients_for_site(site_id: str, message: dict):
-    """Send *message* only to Qt clients whose ``site_id`` matches.
+def send_to_clients_for_session(session_id: str, message: dict):
+    """Send *message* only to Qt clients whose ``session_id`` matches.
 
-    ``"default"`` is the site identifier for the on-device display — it is
-    **not** a wildcard; only clients that registered with ``site_id="default"``
-    will receive the message.
+    ``"default"`` is the session identifier for the on-device display — it is
+    **not** a wildcard; only clients that registered with ``session_id="default"``
+    will receive the message. Clients that share a screen (multi-room) share the
+    same ``session_id``.
 
     Args:
-        site_id: The target physical site identifier (e.g. ``"default"``,
-                 ``"living_room"``, or a random UUID for standalone GUIs).
+        session_id: The target session identifier (e.g. ``"default"`` for the
+                    on-device display, or a random UUID for standalone GUIs).
         message: Dict conforming to the mycroft-gui transport protocol.
     """
     for client in QtGUIWebSocketHandler.clients:
-        if client.site_id == site_id:
+        if client.session_id == session_id:
             try:
                 client.send(message)
             except Exception as e:
-                LOG.exception(f"Error sending to Qt client (site={site_id}): {e}")
+                LOG.exception(f"Error sending to Qt client (session={session_id}): {e}")
 
 
 def any_client_connected() -> bool:
@@ -128,7 +129,7 @@ class QtGUIWebSocketHandler(WebSocketHandler):
     def __init__(self, *args, **kwargs):
         WebSocketHandler.__init__(self, *args, **kwargs)
         self._framework = "qt5"
-        self._site_id: str = "default"
+        self._session_id: str = "default"
         self._plugin: "LegacyMycoftGuiPlugin" = self.application.settings["gui_plugin"]
 
     # ------------------------------------------------------------------
@@ -141,9 +142,9 @@ class QtGUIWebSocketHandler(WebSocketHandler):
         return self._framework
 
     @property
-    def site_id(self) -> str:
-        """Physical site/screen identifier reported by this client."""
-        return self._site_id
+    def session_id(self) -> str:
+        """Session identifier reported by this client (shared screens share one)."""
+        return self._session_id
 
     # ------------------------------------------------------------------
     # WebSocket lifecycle
@@ -199,13 +200,13 @@ class QtGUIWebSocketHandler(WebSocketHandler):
             msg_data = parsed.data.get("data", {})
 
         elif parsed.msg_type == "mycroft.gui.connected":
-            # Qt client announcing its framework version and routing key.
+            # Qt client announcing its framework version and session.
             #
             # The client may send:
-            #   "site_id": "default"        → on-device GUI (Mark2, laptop)
-            #   "site_id": "living_room"    → named location group
-            #   "site_id": "<session-uuid>" → standalone remote GUI (phone)
+            #   "session_id": "default"        → on-device GUI (Mark2, laptop)
+            #   "session_id": "<session-uuid>" → standalone remote GUI (phone)
             #
+            # Clients that share a screen (multi-room) share the same session_id.
             # If omitted, defaults to "default" (on-device).
             default_qt = (
                 Configuration().get("gui", {}).get("default_qt_version") or 5
@@ -215,9 +216,9 @@ class QtGUIWebSocketHandler(WebSocketHandler):
                 qt = parsed.data.get("qt_version") or default_qt
                 framework = "qt6" if int(qt) == 6 else "qt5"
             self._framework = framework
-            site_id = parsed.data.get("site_id") or "default"
-            self._site_id = site_id
-            LOG.info(f"Qt client identified as {framework}, routing key='{site_id}'")
+            session_id = parsed.data.get("session_id") or "default"
+            self._session_id = session_id
+            LOG.info(f"Qt client identified as {framework}, session_id='{session_id}'")
             msg_type = parsed.msg_type
             msg_data = parsed.data
 

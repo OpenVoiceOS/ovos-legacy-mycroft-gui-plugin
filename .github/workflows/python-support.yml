@@ -1,0 +1,16 @@
+name: Python Support
+
+on:
+  pull_request:
+    branches: [dev, master, main]
+  workflow_dispatch:
+
+jobs:
+  python_support:
+    uses: OpenVoiceOS/gh-automations/.github/workflows/python-support.yml@dev
+    secrets: inherit
+    with:
+      package_name: 'ovos_legacy_mycroft_gui'
+      version_file: 'version.py'
+      entry_point: ''
+      python_versions: '["3.10", "3.11", "3.12", "3.13"]'
