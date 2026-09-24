@@ -1,0 +1,18 @@
+name: Build Tests
+
+on:
+  pull_request:
+    branches: [dev, master, main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: OpenVoiceOS/gh-automations/.github/workflows/build-tests.yml@dev
+    secrets: inherit
+    with:
+      python_versions: '["3.10", "3.11", "3.12"]'
+      install_extras: 'test'
+      test_path: 'test'
+      # TODO: revert once ovos-plugin-manager publishes the opm.gui_adapter loader.
+      # The AbstractGUIPlugin contract + loader currently live on OPM branch `gui` (PR #377).
+      pre_install_pip: 'git+https://github.com/OpenVoiceOS/ovos-plugin-manager@gui'
